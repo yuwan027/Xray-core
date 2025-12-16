@@ -1,6 +1,9 @@
 package blackhole
 
 import (
+	"fmt"
+	"net/http"
+
 	"github.com/xtls/xray-core/common"
 	"github.com/xtls/xray-core/common/buf"
 )
@@ -28,6 +31,62 @@ func (*NoneResponse) WriteTo(buf.Writer) int32 { return 0 }
 func (*HTTPResponse) WriteTo(writer buf.Writer) int32 {
 	b := buf.New()
 	common.Must2(b.WriteString(http403response))
+	n := b.Len()
+	writer.WriteMultiBuffer(buf.MultiBuffer{b})
+	return n
+}
+
+// WriteTo implements ResponseConfig.WriteTo().
+func (r *HTTPCustomResponse) WriteTo(writer buf.Writer) int32 {
+	statusCode := int(r.StatusCode)
+	if statusCode <= 0 {
+		statusCode = http.StatusForbidden
+	}
+	statusText := http.StatusText(statusCode)
+	if statusText == "" {
+		statusText = "Unknown"
+	}
+	response := fmt.Sprintf("HTTP/1.1 %d %s\r\nConnection: close\r\nCache-Control: max-age=3600, public\r\nContent-Length: 0\r\n\r\n", statusCode, statusText)
+	b := buf.New()
+	common.Must2(b.WriteString(response))
+	n := b.Len()
+	writer.WriteMultiBuffer(buf.MultiBuffer{b})
+	return n
+}
+
+// TLS Alert codes
+const (
+	TLSAlertHandshakeFailure    = 40
+	TLSAlertProtocolVersion     = 70
+	TLSAlertInternalError       = 80
+	TLSAlertUnrecognizedName    = 112
+	TLSAlertCertificateRequired = 116
+)
+
+// WriteTo implements ResponseConfig.WriteTo().
+// Sends a TLS Alert record to simulate SSL/TLS errors.
+func (r *TLSAlertResponse) WriteTo(writer buf.Writer) int32 {
+	alertCode := byte(r.AlertCode)
+	if alertCode == 0 {
+		alertCode = TLSAlertHandshakeFailure // default to handshake_failure (40)
+	}
+
+	// TLS Alert Record:
+	// - Content Type: 21 (0x15) = Alert
+	// - Version: TLS 1.2 = 0x0303
+	// - Length: 2 bytes
+	// - Alert Level: 2 (fatal)
+	// - Alert Description: alert code
+	tlsAlert := []byte{
+		0x15,       // Content Type: Alert
+		0x03, 0x03, // Version: TLS 1.2
+		0x00, 0x02, // Length: 2 bytes
+		0x02,      // Alert Level: fatal
+		alertCode, // Alert Description
+	}
+
+	b := buf.New()
+	common.Must2(b.Write(tlsAlert))
 	n := b.Len()
 	writer.WriteMultiBuffer(buf.MultiBuffer{b})
 	return n

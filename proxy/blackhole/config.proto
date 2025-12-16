@@ -12,6 +12,14 @@ message NoneResponse {}
 
 message HTTPResponse {}
 
+message HTTPCustomResponse {
+  int32 status_code = 1;
+}
+
+message TLSAlertResponse {
+  int32 alert_code = 1;
+}
+
 message Config {
   xray.common.serial.TypedMessage response = 1;
 }
